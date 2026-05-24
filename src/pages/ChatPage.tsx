@@ -10,6 +10,8 @@ import { sendMessageToAI, getInitialGreeting, parseCorrections } from '../lib/ai
 import { saveSession, updateSession, updateUserStats, getUserStats, addSpeakingMinutes } from '../lib/supabase'
 import type { ChatMessage } from '../lib/supabase'
 
+
+
 interface AIMessage {
   role: 'user' | 'assistant'
   content: string
@@ -112,7 +114,7 @@ export function ChatPage({ onStatsUpdate }: Props) {
   const messagesEndRef  = useRef<HTMLDivElement>(null)
   const inputRef        = useRef<HTMLInputElement>(null)
   const hasInitialized  = useRef(false)
-  const recognitionRef  = useRef<any>(null)
+ const recognitionRef = useRef<SpeechRecognition | null>(null)
 
   useEffect(() => {
     if (hasInitialized.current) return
@@ -244,7 +246,8 @@ export function ChatPage({ onStatsUpdate }: Props) {
   }
 
   function listenForUser() {
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
+    const SpeechRecognition =
+  window.SpeechRecognition || window.webkitSpeechRecognition
     if (!SpeechRecognition) { setError('Speech recognition not supported in this browser.'); return }
     const recognition = new SpeechRecognition()
     recognitionRef.current = recognition

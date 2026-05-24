@@ -225,10 +225,10 @@ export function parseCorrections(text: string): {
   const corrMatch = text.match(correctionRegex)
   const scoreMatch = text.match(scoreRegex)
 
-  let clean = text
-    .replace(correctionRegex, '')
-    .replace(scoreRegex, '')
-    .trim()
+  const clean = text
+  .replace(correctionRegex, '')
+  .replace(scoreRegex, '')
+  .trim()
 
   const corrections = corrMatch
     ? corrMatch[1].split('|').map(c => c.trim()).filter(Boolean)

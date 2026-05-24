@@ -71,7 +71,7 @@ export async function getUserStats(userId: string): Promise<UserStats | null> {
 }
 
 // ─── Streak logic: يزيد الـ streak لو المستخدم دخل يوم جديد ───
-export async function checkAndUpdateStreak(userId: string, stats: UserStats): Promise<Partial<UserStats>> {
+export async function checkAndUpdateStreak(_userId: string, stats: UserStats): Promise<Partial<UserStats>> {
   const today = new Date().toISOString().split('T')[0] // "2025-05-24"
   const lastDate = stats.last_streak_date || ''
 

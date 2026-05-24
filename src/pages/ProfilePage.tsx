@@ -1,9 +1,19 @@
 import { useEffect, useRef, useState } from 'react'
 import { useUser } from '@clerk/clerk-react'
 import {
-  Clock, BookOpen, MessageSquare, TrendingUp, Flame,
- 
-  LogOut, Pencil, Check, X, Camera, Loader2,
+  Clock,
+  BookOpen,
+  MessageSquare,
+  TrendingUp,
+  Flame,
+  LogOut,
+  Pencil,
+  Check,
+  X,
+  Camera,
+  Loader2,
+  ShieldCheck,
+  Lock,
 } from 'lucide-react'
 import { useAuth } from '../lib/authContext'
 import { Chart, registerables } from 'chart.js'
