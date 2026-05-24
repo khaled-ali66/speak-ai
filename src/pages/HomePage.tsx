@@ -10,7 +10,7 @@ interface HomePageProps {
   onClaimQuest: () => void
 }
 
-export function HomePage({ onNavigate, stats, onClaimQuest }: HomePageProps) {
+export function HomePage({ onNavigate, stats,  }: HomePageProps) {
   const { user } = useAuth()
   const firstName = user?.firstName || 'there'
 

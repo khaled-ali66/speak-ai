@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useUser } from '@clerk/clerk-react'
 import {
   Clock, BookOpen, MessageSquare, TrendingUp, Flame,
-  ShieldCheck, Lock, BarChart2, BookIcon, Settings,
+ 
   LogOut, Pencil, Check, X, Camera, Loader2,
 } from 'lucide-react'
 import { useAuth } from '../lib/authContext'
