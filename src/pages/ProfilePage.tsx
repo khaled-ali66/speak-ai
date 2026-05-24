@@ -236,9 +236,8 @@ export function ProfilePage({ stats, onStatsUpdate }: ProfilePageProps) {
         {/* Nav */}
         <div className="hidden md:flex flex-col gap-2">
           {[
-            { label: 'Dashboard', Icon: BarChart2, active: true },
-            { label: 'Lessons',   Icon: BookIcon,  active: false },
-            { label: 'Settings',  Icon: Settings,  active: false },
+          
+          
           ].map(({ label, Icon, active }) => (
             <button key={label}
               className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all
@@ -246,10 +245,7 @@ export function ProfilePage({ stats, onStatsUpdate }: ProfilePageProps) {
               <Icon className="w-4 h-4" /> {label}
             </button>
           ))}
-          <button onClick={signOut}
-            className="flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-red-400 hover:bg-red-500/10 transition-all mt-1">
-            <LogOut className="w-4 h-4" /> Sign Out
-          </button>
+         
         </div>
 
         <button className="mt-2 md:mt-auto bg-gradient-to-r from-brand-purple to-purple-400 text-white rounded-xl py-3 text-sm font-bold shadow-lg shadow-brand-purple/20">
