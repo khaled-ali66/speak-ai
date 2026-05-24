@@ -3,7 +3,7 @@ const GEMINI_API_KEY = import.meta.env.VITE_GEMINI_API_KEY || ''
 const GEMINI_URL =
   'https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent'
 
-const MAX_HISTORY = 10
+const MAX_HISTORY = 4
 
 const SCENARIO_PROMPTS: Record<string, string> = {
   'Job Interview': `
@@ -160,7 +160,7 @@ async function callGemini(systemPrompt: string, userMessage: string, temperature
       body: JSON.stringify({
         system_instruction: { parts: [{ text: systemPrompt }] },
         contents: [{ role: 'user', parts: [{ text: userMessage }] }],
-        generationConfig: { temperature, maxOutputTokens: 1000, topP: 0.9 },
+        generationConfig: { temperature, maxOutputTokens: 100, topP: 0.9 },
       }),
     }
   )

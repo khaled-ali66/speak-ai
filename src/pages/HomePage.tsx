@@ -132,7 +132,7 @@ export function HomePage({ onNavigate, stats, onClaimQuest }: HomePageProps) {
           </button>
 
           <button
-            onClick={onClaimQuest}
+            onClick={() => onNavigate('chat')}
             className="bg-brand-card border border-brand-border rounded-[18px] p-5 md:p-6 transition-all hover:border-brand-purple text-left group sm:col-span-2 md:col-span-1"
           >
             <div className="w-10 h-10 md:w-12 md:h-12 bg-brand-gold/10 rounded-xl flex items-center justify-center mb-4 text-brand-gold">
