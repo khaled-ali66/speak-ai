@@ -144,6 +144,22 @@ export function ChatPage({ onStatsUpdate }: Props) {
   const scenarioRef       = useRef(scenario)
   const sessionIdRef      = useRef<string | null>(null)
 
+  // ─── Mobile viewport height fix ──────────────────────
+  useEffect(() => {
+    function setVh() {
+      // Use visualViewport to get actual height excluding keyboard
+      const h = window.visualViewport?.height ?? window.innerHeight
+      document.documentElement.style.setProperty('--chat-height', `${h}px`)
+    }
+    setVh()
+    window.visualViewport?.addEventListener('resize', setVh)
+    window.addEventListener('resize', setVh)
+    return () => {
+      window.visualViewport?.removeEventListener('resize', setVh)
+      window.removeEventListener('resize', setVh)
+    }
+  }, [])
+
   // Keep refs in sync
   useEffect(() => { scenarioRef.current = scenario }, [scenario])
   useEffect(() => { sessionIdRef.current = sessionId }, [sessionId])
@@ -502,7 +518,7 @@ export function ChatPage({ onStatsUpdate }: Props) {
 
   // ─── NORMAL CHAT ───────────────────────────────────────
   return (
-    <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] h-[calc(100vh-68px-70px)] md:h-[calc(100vh-68px)]">
+    <div className="grid grid-cols-1 md:grid-cols-[260px_1fr]" style={{ height: "calc(var(--chat-height, 100svh) - 68px)" }}>
 
       {/* Sidebar */}
       <div className="hidden md:flex bg-brand-secondary border-r border-brand-border flex-col py-5 overflow-hidden">
@@ -532,7 +548,7 @@ export function ChatPage({ onStatsUpdate }: Props) {
       </div>
 
       {/* Chat area */}
-      <div className="flex flex-col h-full relative bg-brand-bg">
+      <div className="flex flex-col h-full relative bg-brand-bg overflow-hidden">
 
         {/* Mobile header */}
         <div className="md:hidden flex items-center justify-between p-4 border-b border-brand-border bg-brand-secondary">
@@ -553,7 +569,7 @@ export function ChatPage({ onStatsUpdate }: Props) {
         </div>
 
         {/* Messages */}
-        <div className="flex-1 overflow-y-auto p-4 md:p-10 flex flex-col gap-5">
+        <div className="flex-1 min-h-0 overflow-y-auto p-4 md:p-10 flex flex-col gap-5">
           {initializing && (
             <div className="flex items-center gap-3 text-slate-400 text-sm">
               <Loader2 className="w-4 h-4 animate-spin text-brand-purple-light" />
@@ -624,7 +640,7 @@ export function ChatPage({ onStatsUpdate }: Props) {
         </div>
 
         {/* Input bar */}
-        <div className="p-3 md:p-5 px-4 md:px-10 border-t border-brand-border bg-brand-bg/95 backdrop-blur">
+        <div className="p-3 md:p-5 px-4 md:px-10 border-t border-brand-border bg-brand-bg flex-shrink-0">
           {!keyboardOpen ? (
             <div className="flex items-center justify-center gap-4 md:gap-6">
               <button onClick={() => setKeyboardOpen(true)}
