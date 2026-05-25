@@ -23,16 +23,18 @@ export function LeaderboardPage() {
       setLoading(true)
       const data = await getLeaderboard()
       
-      // Map entries with display names and rank
+      // Map entries with real display names from DB
       const mapped: LeaderEntry[] = data.map((d, i) => {
         const isMe = user ? d.user_id === user.id : false
+        // Use saved display_name from DB, fallback to user's own name if isMe, else anonymous
+        const displayName = isMe
+          ? (user?.firstName || user?.email?.split('@')[0] || 'You')
+          : (d.display_name || `User ${d.user_id.slice(-4).toUpperCase()}`)
         return {
           user_id: d.user_id,
           xp: d.xp,
           level: d.level,
-          displayName: isMe
-            ? (user?.firstName || user?.email?.split('@')[0] || 'You')
-            : `Player ${d.user_id.slice(-4).toUpperCase()}`,
+          displayName,
           isMe,
           rank: i + 1,
         }

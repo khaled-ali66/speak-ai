@@ -1,19 +1,9 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, useCallback } from 'react'
 import { useUser } from '@clerk/clerk-react'
 import {
-  Clock,
-  BookOpen,
-  MessageSquare,
-  TrendingUp,
-  Flame,
-  LogOut,
-  Pencil,
-  Check,
-  X,
-  Camera,
-  Loader2,
-  ShieldCheck,
-  Lock,
+  Clock, BookOpen, MessageSquare, TrendingUp, Flame,
+  LogOut, Pencil, Check, X, Camera, Loader2,
+  ShieldCheck, Lock, type LucideIcon,
 } from 'lucide-react'
 import { useAuth } from '../lib/authContext'
 import { Chart, registerables } from 'chart.js'
@@ -43,29 +33,48 @@ function getLevelTitle(level: number): string {
   return 'Proficient C2'
 }
 
+interface StatCard {
+  label: string
+  value: string
+  unit: string
+  color: string
+  trend: string
+  Icon: LucideIcon
+}
+
+interface Milestone {
+  label: string
+  sub: string
+  Icon: LucideIcon
+  bg: string
+  color: string
+  locked: boolean
+}
+
 export function ProfilePage({ stats, onStatsUpdate }: ProfilePageProps) {
   const { user, signOut } = useAuth()
   const { user: clerkUser } = useUser()
 
-  // Chart
   const chartRef      = useRef<HTMLCanvasElement>(null)
   const chartInstance = useRef<Chart | null>(null)
   const [tab, setTab] = useState<Tab>('1W')
 
-  // Edit name
-  const [editingName, setEditingName]   = useState(false)
-  const [nameInput, setNameInput]       = useState('')
-  const [savingName, setSavingName]     = useState(false)
-  const [nameError, setNameError]       = useState('')
+  const [editingName, setEditingName] = useState(false)
+  // initialize directly from clerkUser — no effect needed
+  const [nameInput, setNameInput]     = useState(() => clerkUser?.firstName || '')
+  const [savingName, setSavingName]   = useState(false)
+  const [nameError, setNameError]     = useState('')
 
-  // Avatar upload
-  const fileInputRef                    = useRef<HTMLInputElement>(null)
+  const fileInputRef                      = useRef<HTMLInputElement>(null)
   const [uploadingPhoto, setUploadingPhoto] = useState(false)
-  const [photoError, setPhotoError]     = useState('')
+  const [photoError, setPhotoError]       = useState('')
 
-  useEffect(() => {
-    if (clerkUser) setNameInput(clerkUser.firstName || '')
-  }, [clerkUser])
+  // sync nameInput when clerkUser loads (async) — use useCallback to avoid lint warning
+  const syncName = useCallback(() => {
+    if (clerkUser?.firstName) setNameInput(clerkUser.firstName)
+  }, [clerkUser?.firstName])
+
+  useEffect(() => { syncName() }, [syncName])
 
   useEffect(() => {
     if (!chartRef.current) return
@@ -100,7 +109,6 @@ export function ProfilePage({ stats, onStatsUpdate }: ProfilePageProps) {
     return () => { chartInstance.current?.destroy() }
   }, [tab])
 
-  // ─── Save name via Clerk ───
   async function saveName() {
     if (!clerkUser || !nameInput.trim()) return
     setSavingName(true)
@@ -109,25 +117,23 @@ export function ProfilePage({ stats, onStatsUpdate }: ProfilePageProps) {
       await clerkUser.update({ firstName: nameInput.trim() })
       setEditingName(false)
       onStatsUpdate()
-    } catch (err: any) {
+    } catch {
       setNameError('Failed to update name.')
     } finally {
       setSavingName(false)
     }
   }
 
-  // ─── Upload photo via Clerk ───
   async function handlePhotoChange(e: React.ChangeEvent<HTMLInputElement>) {
     const file = e.target.files?.[0]
     if (!file || !clerkUser) return
     if (file.size > 5 * 1024 * 1024) { setPhotoError('Max file size is 5MB'); return }
     if (!file.type.startsWith('image/')) { setPhotoError('Please select an image file'); return }
-
     setUploadingPhoto(true)
     setPhotoError('')
     try {
       await clerkUser.setProfileImage({ file })
-    } catch (err: any) {
+    } catch {
       setPhotoError('Failed to upload photo.')
     } finally {
       setUploadingPhoto(false)
@@ -135,24 +141,36 @@ export function ProfilePage({ stats, onStatsUpdate }: ProfilePageProps) {
     }
   }
 
-  const xp            = stats?.xp ?? 0
-  const level         = stats?.level ?? 1
-  const streak        = stats?.streak ?? 0
-  const speakingMins  = stats?.speaking_minutes ?? 0
-  const vocabulary    = stats?.vocabulary_count ?? 0
-  const sessions      = stats?.sessions_count ?? 0
-  const levelTitle    = getLevelTitle(level)
-  const xpInLevel     = xp % 500
-  const xpProgress    = Math.round((xpInLevel / 500) * 100)
+  const xp           = stats?.xp ?? 0
+  const level        = stats?.level ?? 1
+  const streak       = stats?.streak ?? 0
+  const speakingMins = stats?.speaking_minutes ?? 0
+  const vocabulary   = stats?.vocabulary_count ?? 0
+  const sessions     = stats?.sessions_count ?? 0
+  const levelTitle   = getLevelTitle(level)
+  const xpInLevel    = xp % 500
+  const xpProgress   = Math.round((xpInLevel / 500) * 100)
 
-  // Format speaking time
   const speakingDisplay = speakingMins >= 60
     ? `${(speakingMins / 60).toFixed(1)} hrs`
     : `${speakingMins} min`
 
-  const displayName   = clerkUser?.firstName || user?.email?.split('@')[0] || 'Student'
-  const avatarUrl     = clerkUser?.imageUrl
-  const initials      = displayName.charAt(0).toUpperCase()
+  const displayName = clerkUser?.firstName || user?.email?.split('@')[0] || 'Student'
+  const avatarUrl   = clerkUser?.imageUrl
+  const initials    = displayName.charAt(0).toUpperCase()
+
+  const statCards: StatCard[] = [
+    { label: 'Speaking Time', value: speakingDisplay, unit: '', color: 'text-brand-purple-light', trend: sessions > 0 ? `${sessions} sessions total` : 'Start chatting!', Icon: Clock },
+    { label: 'Vocabulary', value: vocabulary.toLocaleString(), unit: '', color: 'text-brand-green', trend: vocabulary > 0 ? `${vocabulary} words learned` : 'Build your vocab!', Icon: BookOpen },
+    { label: 'Sessions', value: sessions.toString(), unit: '', color: 'text-brand-orange', trend: sessions > 0 ? 'Completed sessions' : 'Start your first!', Icon: MessageSquare },
+    { label: 'Streak', value: streak.toString(), unit: streak === 1 ? 'day' : 'days', color: 'text-brand-gold', trend: streak > 0 ? `🔥 ${streak} day${streak !== 1 ? 's' : ''} in a row!` : 'Come back daily!', Icon: Flame },
+  ]
+
+  const milestones: Milestone[] = [
+    { label: '30-Day Streak',   sub: streak >= 30   ? 'Achieved! 🎉' : `${streak}/30 days`,                     Icon: Flame,       bg: 'bg-brand-orange/15', color: 'text-brand-orange', locked: streak < 30 },
+    { label: 'Scenario Master', sub: sessions >= 50 ? 'Achieved! 🎉' : `${sessions}/50 sessions`,               Icon: ShieldCheck, bg: 'bg-brand-green/15',  color: 'text-brand-green',  locked: sessions < 50 },
+    { label: 'Grammar Pro',     sub: level >= 15    ? 'Achieved! 🎉' : `Unlock at Lvl 15 (now ${level})`,       Icon: Lock,        bg: 'bg-white/5',          color: 'text-slate-400',    locked: level < 15 },
+  ]
 
   return (
     <div className="flex flex-col md:grid md:grid-cols-[240px_1fr] min-h-[calc(100vh-68px)]">
@@ -160,19 +178,15 @@ export function ProfilePage({ stats, onStatsUpdate }: ProfilePageProps) {
       {/* ── Sidebar ── */}
       <div className="bg-brand-secondary border-b md:border-b-0 md:border-r border-brand-border p-4 md:p-5 flex flex-col gap-2">
 
-        {/* Avatar + name */}
         <div className="text-center pb-4 md:pb-6 mb-2 border-b border-brand-border flex flex-row md:flex-col items-center md:justify-center gap-4 md:gap-0 text-left md:text-center">
 
           {/* Avatar */}
           <div className="relative flex-shrink-0">
             <div className="w-16 h-16 md:w-20 md:h-20 rounded-full bg-brand-purple/20 border-2 border-brand-purple overflow-hidden flex items-center justify-center">
-              {avatarUrl ? (
-                <img src={avatarUrl} alt="avatar" className="w-full h-full object-cover" />
-              ) : (
-                <span className="text-2xl font-bold text-brand-purple-light">{initials}</span>
-              )}
+              {avatarUrl
+                ? <img src={avatarUrl} alt="avatar" className="w-full h-full object-cover" />
+                : <span className="text-2xl font-bold text-brand-purple-light">{initials}</span>}
             </div>
-            {/* Upload button */}
             <button
               onClick={() => fileInputRef.current?.click()}
               disabled={uploadingPhoto}
@@ -182,17 +196,10 @@ export function ProfilePage({ stats, onStatsUpdate }: ProfilePageProps) {
                 ? <Loader2 className="w-3 h-3 text-white animate-spin" />
                 : <Camera className="w-3 h-3 text-white" />}
             </button>
-            <input
-              ref={fileInputRef}
-              type="file"
-              accept="image/*"
-              className="hidden"
-              onChange={handlePhotoChange}
-            />
+            <input ref={fileInputRef} type="file" accept="image/*" className="hidden" onChange={handlePhotoChange} />
           </div>
 
           <div className="flex-1 md:w-full">
-            {/* Editable name */}
             {editingName ? (
               <div className="flex items-center gap-1.5 mb-1">
                 <input
@@ -220,7 +227,7 @@ export function ProfilePage({ stats, onStatsUpdate }: ProfilePageProps) {
                 </button>
               </div>
             )}
-            {nameError && <p className="text-red-400 text-[10px] mb-1">{nameError}</p>}
+            {nameError  && <p className="text-red-400 text-[10px] mb-1">{nameError}</p>}
             {photoError && <p className="text-red-400 text-[10px] mb-1">{photoError}</p>}
 
             <div className="text-[12px] md:text-[13px] text-slate-400">Level {level} · {levelTitle}</div>
@@ -228,11 +235,9 @@ export function ProfilePage({ stats, onStatsUpdate }: ProfilePageProps) {
               {xp.toLocaleString()} XP
             </div>
 
-            {/* XP progress bar */}
             <div className="mt-2 w-full max-w-[160px] mx-auto md:mx-0">
               <div className="flex justify-between text-[10px] text-slate-500 mb-1">
-                <span>Lvl {level}</span>
-                <span>Lvl {level + 1}</span>
+                <span>Lvl {level}</span><span>Lvl {level + 1}</span>
               </div>
               <div className="h-1.5 bg-white/5 rounded-full overflow-hidden">
                 <div className="h-full bg-brand-purple rounded-full transition-all duration-700" style={{ width: `${xpProgress}%` }} />
@@ -243,20 +248,10 @@ export function ProfilePage({ stats, onStatsUpdate }: ProfilePageProps) {
           </div>
         </div>
 
-        {/* Nav */}
-        <div className="hidden md:flex flex-col gap-2">
-          {[
-          
-          
-          ].map(({ label, Icon, active }) => (
-            <button key={label}
-              className={`flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm transition-all
-                ${active ? 'font-semibold text-brand-purple-light bg-brand-purple/15' : 'font-medium text-slate-400 hover:bg-white/5 hover:text-white'}`}>
-              <Icon className="w-4 h-4" /> {label}
-            </button>
-          ))}
-         
-        </div>
+        <button onClick={signOut}
+          className="hidden md:flex items-center gap-3 px-3 py-2.5 rounded-xl text-sm font-medium text-red-400 hover:bg-red-500/10 transition-all mt-1">
+          <LogOut className="w-4 h-4" /> Sign Out
+        </button>
 
         <button className="mt-2 md:mt-auto bg-gradient-to-r from-brand-purple to-purple-400 text-white rounded-xl py-3 text-sm font-bold shadow-lg shadow-brand-purple/20">
           Upgrade to Pro
@@ -272,40 +267,7 @@ export function ProfilePage({ stats, onStatsUpdate }: ProfilePageProps) {
 
         {/* Stats grid */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 md:gap-5 mb-6 md:mb-8 animate-fade-up" style={{ animationDelay: '0.1s' }}>
-          {[
-            {
-              label: 'Speaking Time',
-              value: speakingDisplay,
-              unit: '',
-              color: 'text-brand-purple-light',
-              trend: sessions > 0 ? `${sessions} sessions total` : 'Start chatting!',
-              Icon: Clock,
-            },
-            {
-              label: 'Vocabulary',
-              value: vocabulary.toLocaleString(),
-              unit: '',
-              color: 'text-brand-green',
-              trend: vocabulary > 0 ? `${vocabulary} words learned` : 'Build your vocab!',
-              Icon: BookOpen,
-            },
-            {
-              label: 'Sessions',
-              value: sessions.toString(),
-              unit: '',
-              color: 'text-brand-orange',
-              trend: sessions > 0 ? 'Completed sessions' : 'Start your first!',
-              Icon: MessageSquare,
-            },
-            {
-              label: 'Streak',
-              value: streak.toString(),
-              unit: streak === 1 ? 'day' : 'days',
-              color: 'text-brand-gold',
-              trend: streak > 0 ? `🔥 ${streak} day${streak !== 1 ? 's' : ''} in a row!` : 'Come back daily!',
-              Icon: Flame,
-            },
-          ].map(({ label, value, unit, color, trend, Icon }) => (
+          {statCards.map(({ label, value, unit, color, trend, Icon }) => (
             <div key={label} className="bg-brand-card border border-brand-border rounded-[18px] p-5">
               <div className="flex justify-between items-center mb-3">
                 <div className="text-[10px] md:text-[11px] tracking-[1.5px] text-brand-muted uppercase font-semibold">{label}</div>
@@ -344,11 +306,7 @@ export function ProfilePage({ stats, onStatsUpdate }: ProfilePageProps) {
         <div className="bg-brand-card border border-brand-border rounded-[18px] p-5 md:p-6 animate-fade-up" style={{ animationDelay: '0.2s' }}>
           <h2 className="text-base md:text-lg font-bold mb-4 md:mb-5">Milestones</h2>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 md:gap-4">
-            {[
-              { label: '30-Day Streak',   sub: streak >= 30   ? 'Achieved! 🎉' : `${streak}/30 days`,       Icon: Flame,       bg: 'bg-brand-orange/15', color: 'text-brand-orange', locked: streak < 30 },
-              { label: 'Scenario Master', sub: sessions >= 50 ? 'Achieved! 🎉' : `${sessions}/50 sessions`, Icon: ShieldCheck, bg: 'bg-brand-green/15',  color: 'text-brand-green',  locked: sessions < 50 },
-              { label: 'Grammar Pro',     sub: level >= 15    ? 'Achieved! 🎉' : `Unlock at Lvl 15 (now ${level})`, Icon: Lock, bg: 'bg-white/5', color: 'text-slate-400', locked: level < 15 },
-            ].map(({ label, sub, Icon, bg, color, locked }) => (
+            {milestones.map(({ label, sub, Icon, bg, color, locked }) => (
               <div key={label}
                 className={`bg-brand-card2 border border-brand-border rounded-2xl p-4 md:p-5 text-center ${locked ? 'opacity-50 grayscale' : ''}`}>
                 <div className={`w-12 h-12 md:w-16 md:h-16 rounded-full ${bg} ${color} mx-auto mb-2 md:mb-3 flex items-center justify-center`}>

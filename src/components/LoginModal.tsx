@@ -11,6 +11,8 @@ interface Props {
 type Step = 'email' | 'otp' | 'success'
 type Mode = 'signup' | 'signin'
 
+type ClerkError = { errors?: { code?: string; longMessage?: string; message?: string }[] }
+
 export function LoginModal({ open, onClose, onSuccess }: Props) {
   const { signIn, isLoaded: signInLoaded, setActive: setSignInActive } = useSignIn()
   const { signUp, isLoaded: signUpLoaded, setActive: setSignUpActive } = useSignUp()
@@ -34,6 +36,15 @@ export function LoginModal({ open, onClose, onSuccess }: Props) {
     }
   }, [open])
 
+  function getErrMsg(err: unknown, fallback: string): string {
+    const e = err as ClerkError
+    return e?.errors?.[0]?.longMessage || e?.errors?.[0]?.message || fallback
+  }
+
+  function getErrCode(err: unknown): string | undefined {
+    return (err as ClerkError)?.errors?.[0]?.code
+  }
+
   async function handleSendOtp(e: React.FormEvent) {
     e.preventDefault()
     if (!email.match(/^[^\s@]+@[^\s@]+\.[^\s@]+$/)) {
@@ -52,30 +63,29 @@ export function LoginModal({ open, onClose, onSuccess }: Props) {
       } else {
         await doSignIn(email)
       }
-    } catch (err: any) {
-      const code = err?.errors?.[0]?.code
+    } catch (err: unknown) {
+      const code = getErrCode(err)
 
       if (code === 'form_identifier_exists' && mode === 'signup') {
-        // Email exists → switch to sign in automatically
         setMode('signin')
         setError('This email already has an account. Switching to sign in...')
         setTimeout(async () => {
           setError('')
           try {
             await doSignIn(email)
-          } catch (e: any) {
-            setError(e?.errors?.[0]?.longMessage || 'Failed to send code.')
+          } catch (e: unknown) {
+            setError(getErrMsg(e, 'Failed to send code.'))
           }
         }, 1000)
         return
       }
 
       if (code === 'form_identifier_not_found' && mode === 'signin') {
-        setError("No account found with this email. Create one instead?")
+        setError('No account found with this email. Create one instead?')
         return
       }
 
-      setError(err?.errors?.[0]?.longMessage || 'Failed to send code. Please try again.')
+      setError(getErrMsg(err, 'Failed to send code. Please try again.'))
     } finally {
       setLoading(false)
     }
@@ -84,14 +94,14 @@ export function LoginModal({ open, onClose, onSuccess }: Props) {
   async function doSignIn(emailAddress: string) {
     const result = await signIn!.create({ identifier: emailAddress })
     const emailFactor = result.supportedFirstFactors?.find(
-      (f: any) => f.strategy === 'email_code'
-    ) as any
+      (f) => f.strategy === 'email_code'
+    )
 
     if (!emailFactor) throw new Error('Email code factor not available')
 
     await signIn!.prepareFirstFactor({
       strategy: 'email_code',
-      emailAddressId: emailFactor.emailAddressId,
+      emailAddressId: (emailFactor as { emailAddressId: string }).emailAddressId,
     })
     setStep('otp')
   }
@@ -109,14 +119,11 @@ export function LoginModal({ open, onClose, onSuccess }: Props) {
     try {
       if (mode === 'signup') {
         const result = await signUp!.attemptEmailAddressVerification({ code: otp })
-
         if (result.status === 'complete') {
-          // ✅ FIX: setActive لازم يتاستدعى عشان Clerk يحط الـ session
           await setSignUpActive!({ session: result.createdSessionId })
           setStep('success')
           setTimeout(() => onSuccess(), 1200)
         } else {
-          // Handle missing fields (rare)
           setError('Verification incomplete. Please try again.')
         }
       } else {
@@ -124,9 +131,7 @@ export function LoginModal({ open, onClose, onSuccess }: Props) {
           strategy: 'email_code',
           code: otp,
         })
-
         if (result.status === 'complete') {
-          // ✅ FIX: setActive لازم يتاستدعى عشان Clerk يحط الـ session
           await setSignInActive!({ session: result.createdSessionId })
           setStep('success')
           setTimeout(() => onSuccess(), 1200)
@@ -134,9 +139,8 @@ export function LoginModal({ open, onClose, onSuccess }: Props) {
           setError('Sign in incomplete. Please try again.')
         }
       }
-    } catch (err: any) {
-      const msg = err?.errors?.[0]?.longMessage || err?.errors?.[0]?.message || 'Invalid code. Please try again.'
-      setError(msg)
+    } catch (err: unknown) {
+      setError(getErrMsg(err, 'Invalid code. Please try again.'))
     } finally {
       setLoading(false)
     }
@@ -151,8 +155,8 @@ export function LoginModal({ open, onClose, onSuccess }: Props) {
       } else {
         await doSignIn(email)
       }
-    } catch (err: any) {
-      setError(err?.errors?.[0]?.longMessage || 'Failed to resend.')
+    } catch (err: unknown) {
+      setError(getErrMsg(err, 'Failed to resend.'))
     } finally {
       setLoading(false)
     }

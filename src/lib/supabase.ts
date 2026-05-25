@@ -28,36 +28,41 @@ export interface UserStats {
   xp: number
   level: number
   streak: number
-  speaking_minutes: number   // دقائق حقيقية بدل ساعات
+  speaking_hours: number
   vocabulary_count: number
   sessions_count: number
   last_active: string
-  last_streak_date: string   // تاريخ آخر يوم احتسب فيه الـ streak
+  display_name?: string
 }
 
 export async function getUserStats(userId: string): Promise<UserStats | null> {
   if (!supabase) return null
 
+  // Use maybeSingle() instead of single() — returns null instead of 406 when no row found
   const { data, error } = await supabase
     .from('user_stats')
     .select('*')
     .eq('user_id', userId)
     .maybeSingle()
 
-  if (error) { console.error('getUserStats error:', error); return null }
+  if (error) {
+    console.error('getUserStats error:', error)
+    return null
+  }
 
+  // Row exists, return it
   if (data) return data
 
+  // Row doesn't exist — create it
   const defaults = {
     user_id: userId,
     xp: 0,
     level: 1,
     streak: 0,
-    speaking_minutes: 0,
+    speaking_hours: 0,
     vocabulary_count: 0,
     sessions_count: 0,
     last_active: new Date().toISOString(),
-    last_streak_date: '',
   }
 
   const { data: created, error: insertError } = await supabase
@@ -66,37 +71,12 @@ export async function getUserStats(userId: string): Promise<UserStats | null> {
     .select()
     .single()
 
-  if (insertError) { console.error('getUserStats insert error:', insertError); return null }
+  if (insertError) {
+    console.error('getUserStats insert error:', insertError)
+    return null
+  }
+
   return created
-}
-
-// ─── Streak logic: يزيد الـ streak لو المستخدم دخل يوم جديد ───
-export async function checkAndUpdateStreak(_userId: string, stats: UserStats): Promise<Partial<UserStats>> {
-  const today = new Date().toISOString().split('T')[0] // "2025-05-24"
-  const lastDate = stats.last_streak_date || ''
-
-  if (lastDate === today) {
-    // نفس اليوم — مش بيتغير
-    return {}
-  }
-
-  const yesterday = new Date()
-  yesterday.setDate(yesterday.getDate() - 1)
-  const yesterdayStr = yesterday.toISOString().split('T')[0]
-
-  let newStreak: number
-  if (lastDate === yesterdayStr) {
-    // دخل امبارح وامبارح — streak يزيد
-    newStreak = (stats.streak || 0) + 1
-  } else if (!lastDate) {
-    // أول مرة
-    newStreak = 1
-  } else {
-    // انقطع — من أول
-    newStreak = 1
-  }
-
-  return { streak: newStreak, last_streak_date: today }
 }
 
 export async function updateUserStats(userId: string, updates: Partial<UserStats>) {
@@ -108,16 +88,6 @@ export async function updateUserStats(userId: string, updates: Partial<UserStats
     .select()
     .single()
   return data
-}
-
-// ─── إضافة دقائق حقيقية للـ session ───
-export async function addSpeakingMinutes(userId: string, minutes: number) {
-  if (!supabase || minutes <= 0) return
-  const stats = await getUserStats(userId)
-  if (!stats) return
-  await updateUserStats(userId, {
-    speaking_minutes: (stats.speaking_minutes || 0) + Math.round(minutes),
-  })
 }
 
 export async function saveSession(session: Omit<ChatSession, 'id' | 'created_at' | 'updated_at'>) {
@@ -148,12 +118,41 @@ export async function getUserSessions(userId: string): Promise<ChatSession[]> {
   return data || []
 }
 
-export async function getLeaderboard() {
+export async function getLeaderboard(): Promise<{ user_id: string; xp: number; level: number; display_name?: string }[]> {
   if (!supabase) return []
   const { data } = await supabase
     .from('user_stats')
-    .select('user_id, xp, level')
+    .select('user_id, xp, level, display_name')
     .order('xp', { ascending: false })
-    .limit(20)
+    .limit(50)
   return data || []
+}
+
+// Call this once when user logs in to keep display_name in sync
+export async function upsertUserStats(userId: string, displayName: string): Promise<void> {
+  if (!supabase) return
+  const { data: existing } = await supabase
+    .from('user_stats')
+    .select('id')
+    .eq('user_id', userId)
+    .maybeSingle()
+
+  if (existing) {
+    // Update display_name if it changed
+    await supabase
+      .from('user_stats')
+      .update({ display_name: displayName, last_active: new Date().toISOString() })
+      .eq('user_id', userId)
+  } else {
+    // Create fresh row for new user
+    await supabase
+      .from('user_stats')
+      .insert({
+        user_id: userId,
+        display_name: displayName,
+        xp: 0, level: 1, streak: 0,
+        speaking_hours: 0, vocabulary_count: 0, sessions_count: 0,
+        last_active: new Date().toISOString(),
+      })
+  }
 }

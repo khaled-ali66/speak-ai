@@ -7,7 +7,7 @@ import { ChatPage } from './pages/ChatPage'
 import { LeaderboardPage } from './pages/LeaderboardPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { LoginModal } from './components/LoginModal'
-import { getUserStats, updateUserStats, checkAndUpdateStreak, type UserStats } from './lib/supabase'
+import { getUserStats, updateUserStats, upsertUserStats, type UserStats } from './lib/supabase'
 import { useToast } from './hooks/useToast'
 
 type Page = 'home' | 'chat' | 'leaderboard' | 'profile'
@@ -22,25 +22,15 @@ function App() {
   const [pendingPage, setPendingPage] = useState<Page | null>(null)
 
   useEffect(() => {
-    if (!user) return
-
-    let cancelled = false
-
-    async function loadStats() {
-      const s = await getUserStats(user!.id)
-      if (!s || cancelled) return
-      const streakUpdates = await checkAndUpdateStreak(user!.id, s)
-      if (cancelled) return
-      if (Object.keys(streakUpdates).length > 0) {
-        const updated = await updateUserStats(user!.id, streakUpdates)
-        if (!cancelled && updated) setStats(updated)
-      } else {
-        if (!cancelled) setStats(s)
-      }
+    if (user) {
+      const displayName = user.firstName || user.email.split('@')[0] || 'User'
+      // Sync display name and create stats row if missing
+      upsertUserStats(user.id, displayName).then(() => {
+        getUserStats(user.id).then(s => { if (s) setStats(s) })
+      })
+    } else {
+      setStats(null)
     }
-
-    loadStats()
-    return () => { cancelled = true }
   }, [user])
 
   function refreshStats() {
@@ -98,13 +88,9 @@ function App() {
         {currentPage === 'home' && (
           <HomePage onNavigate={navigate} stats={stats} onClaimQuest={claimQuest} />
         )}
-        {currentPage === 'chat' && user && (
-          <ChatPage onStatsUpdate={refreshStats} />
-        )}
+        {currentPage === 'chat' && user && <ChatPage onStatsUpdate={refreshStats} />}
         {currentPage === 'leaderboard' && user && <LeaderboardPage />}
-        {currentPage === 'profile' && user && (
-          <ProfilePage stats={stats} onStatsUpdate={refreshStats} />
-        )}
+        {currentPage === 'profile' && user && <ProfilePage stats={stats} />}
       </main>
 
       <Toast msg={toast.msg} visible={toast.visible} />

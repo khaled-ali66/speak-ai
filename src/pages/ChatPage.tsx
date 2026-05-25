@@ -7,11 +7,31 @@ import {
 } from 'lucide-react'
 import { useAuth } from '../lib/authContext'
 import { sendMessageToAI, getInitialGreeting, parseCorrections } from '../lib/ai'
-import { saveSession, updateSession, updateUserStats, getUserStats, addSpeakingMinutes } from '../lib/supabase'
+import { saveSession, updateSession, updateUserStats, getUserStats } from '../lib/supabase'
 import type { ChatMessage } from '../lib/supabase'
 
+// ─── Speech Recognition types ──────────────────────────────
+interface MySpeechRecognition {
+  lang: string
+  continuous: boolean
+  interimResults: boolean
+  start(): void
+  stop(): void
+  onresult: ((event: MySpeechRecognitionEvent) => void) | null
+  onerror: ((event: Event) => void) | null
+  onend: (() => void) | null
+}
+interface MySpeechRecognitionEvent {
+  results: { [index: number]: { [index: number]: { transcript: string } } }
+}
+type MySpeechRecognitionCtor = new () => MySpeechRecognition
 
+function getSR(): MySpeechRecognitionCtor | null {
+  const w = window as any
+  return w.SpeechRecognition ?? w.webkitSpeechRecognition ?? null
+}
 
+// ─── Types ─────────────────────────────────────────────────
 interface AIMessage {
   role: 'user' | 'assistant'
   content: string
@@ -32,6 +52,7 @@ interface Props {
   onStatsUpdate: () => void
 }
 
+// ─── Constants ─────────────────────────────────────────────
 const SCENARIOS = [
   { id: 'Job Interview',       label: 'Job Interview',    Icon: Briefcase   },
   { id: 'Coffee Shop',         label: 'Coffee Shop',      Icon: Coffee      },
@@ -40,6 +61,7 @@ const SCENARIOS = [
   { id: 'Business Meeting',    label: 'Business Meeting', Icon: Users       },
 ]
 
+// ─── Helpers ───────────────────────────────────────────────
 function speak(text: string) {
   if (!window.speechSynthesis) return
   window.speechSynthesis.cancel()
@@ -47,7 +69,9 @@ function speak(text: string) {
   utter.lang = 'en-US'
   utter.rate = 0.95
   const voices = window.speechSynthesis.getVoices()
-  const preferred = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Natural'))) || voices.find(v => v.lang.startsWith('en'))
+  const preferred =
+    voices.find(v => v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Natural'))) ||
+    voices.find(v => v.lang.startsWith('en'))
   if (preferred) utter.voice = preferred
   window.speechSynthesis.speak(utter)
 }
@@ -56,19 +80,19 @@ function parseCorrectionsDetailed(corrections: string[]): { wrong: string; right
   return corrections
     .filter(c => c && c !== 'No corrections needed')
     .map(c => {
-      const arrowMatch = c.match(/["']?(.+?)["']?\s*(?:→|->)\s*["']?(.+?)["']?$/)
-      if (arrowMatch) return { wrong: arrowMatch[1].trim(), right: arrowMatch[2].trim() }
+      const m = c.match(/["']?(.+?)["']?\s*(?:→|->)\s*["']?(.+?)["']?$/)
+      if (m) return { wrong: m[1].trim(), right: m[2].trim() }
       return { wrong: '', right: c }
     })
     .filter(c => c.right)
 }
 
 function scoreMessage(corrections: string[]): number {
-  const filtered = corrections.filter(c => c && c !== 'No corrections needed')
-  if (filtered.length === 0) return 100
-  if (filtered.length === 1) return 80
-  if (filtered.length === 2) return 60
-  if (filtered.length === 3) return 40
+  const n = corrections.filter(c => c && c !== 'No corrections needed').length
+  if (n === 0) return 100
+  if (n === 1) return 80
+  if (n === 2) return 60
+  if (n === 3) return 40
   return 20
 }
 
@@ -87,59 +111,61 @@ function ScoreBadge({ score }: { score: number }) {
   )
 }
 
+// ─── Component ─────────────────────────────────────────────
 export function ChatPage({ onStatsUpdate }: Props) {
   const { user } = useAuth()
-  const [scenario, setScenario]               = useState('Job Interview')
-  const [messages, setMessages]               = useState<AIMessage[]>([])
-  const [loading, setLoading]                 = useState(false)
-  const [keyboardOpen, setKeyboardOpen]       = useState(false)
-  const [micActive, setMicActive]             = useState(false)
-  const [inputText, setInputText]             = useState('')
-  const [sessionId, setSessionId]             = useState<string | null>(null)
-  const [error, setError]                     = useState<string | null>(null)
-  const [initializing, setInitializing]       = useState(false)
+
+  // Chat state
+  const [scenario, setScenario]                   = useState('Job Interview')
+  const [messages, setMessages]                   = useState<AIMessage[]>([])
+  const [loading, setLoading]                     = useState(false)
+  const [keyboardOpen, setKeyboardOpen]           = useState(false)
+  const [micActive, setMicActive]                 = useState(false)
+  const [inputText, setInputText]                 = useState('')
+  const [sessionId, setSessionId]                 = useState<string | null>(null)
+  const [error, setError]                         = useState<string | null>(null)
+  const [initializing, setInitializing]           = useState(false)
   const [scenarioModalOpen, setScenarioModalOpen] = useState(false)
 
-  // Call mode
-  const [callActive, setCallActive]           = useState(false)
-  const [callSummary, setCallSummary]         = useState<CallSummary | null>(null)
-  const [callMessages, setCallMessages]       = useState<AIMessage[]>([])
-  const [isSpeaking, setIsSpeaking]           = useState(false)
-  const callMessagesRef                       = useRef<AIMessage[]>([])
-  const callStartTimeRef                      = useRef<number>(0)
+  // Call state
+  const [callActive, setCallActive]     = useState(false)
+  const [callSummary, setCallSummary]   = useState<CallSummary | null>(null)
+  const [callMessages, setCallMessages] = useState<AIMessage[]>([])
+  const [isSpeaking, setIsSpeaking]     = useState(false)
 
-  // Chat session timer
-  const sessionStartRef                       = useRef<number>(Date.now())
+  // Refs
+  const messagesEndRef    = useRef<HTMLDivElement>(null)
+  const inputRef          = useRef<HTMLInputElement>(null)
+  const hasInitialized    = useRef(false)
+  const recognitionRef    = useRef<MySpeechRecognition | null>(null)
+  const callMessagesRef   = useRef<AIMessage[]>([])
+  const callStartTimeRef  = useRef<number>(0)
+  const sessionStartRef   = useRef<number>(Date.now())
+  const scenarioRef       = useRef(scenario)
+  const sessionIdRef      = useRef<string | null>(null)
 
-  const messagesEndRef  = useRef<HTMLDivElement>(null)
-  const inputRef        = useRef<HTMLInputElement>(null)
-  const hasInitialized  = useRef(false)
- const recognitionRef = useRef<SpeechRecognition | null>(null)
+  // Keep refs in sync
+  useEffect(() => { scenarioRef.current = scenario }, [scenario])
+  useEffect(() => { sessionIdRef.current = sessionId }, [sessionId])
+  useEffect(() => { callMessagesRef.current = callMessages }, [callMessages])
+  useEffect(() => { messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' }) }, [messages])
 
-  useEffect(() => {
-    if (hasInitialized.current) return
-    hasInitialized.current = true
-    sessionStartRef.current = Date.now()
-    startNewSession('Job Interview')
-  }, [])
-
-  // Track minutes spent in chat on unmount
+  // Track speaking minutes on unmount
   useEffect(() => {
     return () => {
       const mins = Math.round((Date.now() - sessionStartRef.current) / 60000)
-      if (user && mins > 0) addSpeakingMinutes(user.id, mins).then(onStatsUpdate)
+      if (user && mins > 0) {
+        getUserStats(user.id).then(stats => {
+          if (stats) updateUserStats(user.id, {
+            speaking_hours: (stats.speaking_hours || 0) + mins / 60,
+          })
+        })
+      }
     }
   }, [user])
 
-  useEffect(() => {
-    messagesEndRef.current?.scrollIntoView({ behavior: 'smooth' })
-  }, [messages])
-
-  useEffect(() => {
-    callMessagesRef.current = callMessages
-  }, [callMessages])
-
-  async function startNewSession(sc: string) {
+  // ─── startNewSession ───────────────────────────────────
+  const startNewSession = useCallback(async (sc: string) => {
     setInitializing(true)
     setError(null)
     setMessages([])
@@ -164,8 +190,16 @@ export function ChatPage({ onStatsUpdate }: Props) {
     } finally {
       setInitializing(false)
     }
-  }
+  }, [user, onStatsUpdate])
 
+  useEffect(() => {
+    if (hasInitialized.current) return
+    hasInitialized.current = true
+    sessionStartRef.current = Date.now()
+    startNewSession('Job Interview')
+  }, [startNewSession])
+
+  // ─── handleSelectScenario ──────────────────────────────
   async function handleSelectScenario(sc: string) {
     if (sc === scenario && messages.length > 0) return
     setScenario(sc)
@@ -173,6 +207,7 @@ export function ChatPage({ onStatsUpdate }: Props) {
     await startNewSession(sc)
   }
 
+  // ─── sendMessage (chat mode) ───────────────────────────
   async function sendMessage(text: string) {
     if (!text.trim() || loading) return
     setError(null)
@@ -183,28 +218,28 @@ export function ChatPage({ onStatsUpdate }: Props) {
     setLoading(true)
     try {
       const history = updated.map(m => ({ role: m.role, content: m.content }))
-      const aiRaw = await sendMessageToAI(history, scenario)
+      const aiRaw = await sendMessageToAI(history, scenarioRef.current)
       const { clean, corrections } = parseCorrections(aiRaw)
       const score = scoreMessage(corrections)
-      const userMsgWithScore = { ...userMsg, corrections, score }
       const aiMsg: AIMessage = { role: 'assistant', content: clean, timestamp: new Date().toISOString(), corrections: [] }
-      const final = updated.map((m, i) => i === updated.length - 1 ? userMsgWithScore : m)
-      const withAi = [...final, aiMsg]
+      const finalMsgs = updated.map((m, i) =>
+        i === updated.length - 1 ? { ...userMsg, corrections, score } : m
+      )
+      const withAi = [...finalMsgs, aiMsg]
       setMessages(withAi)
 
-      if (sessionId) {
+      const sid = sessionIdRef.current
+      if (sid) {
         const dbMsgs: ChatMessage[] = withAi.map(m => ({ role: m.role, content: m.content, timestamp: m.timestamp }))
-        await updateSession(sessionId, dbMsgs)
+        await updateSession(sid, dbMsgs)
       }
 
       if (user) {
         const stats = await getUserStats(user.id)
         if (stats) {
           const xpGain = Math.round(score / 10)
-          await updateUserStats(user.id, {
-            xp: (stats.xp || 0) + xpGain,
-            level: Math.floor(((stats.xp || 0) + xpGain) / 500) + 1,
-          })
+          const newXp = (stats.xp || 0) + xpGain
+          await updateUserStats(user.id, { xp: newXp, level: Math.floor(newXp / 500) + 1 })
           onStatsUpdate()
         }
       }
@@ -215,20 +250,35 @@ export function ChatPage({ onStatsUpdate }: Props) {
     }
   }
 
-  // ─── CALL MODE ───
-  async function startCall() {
-    setCallActive(true)
-    setCallMessages([])
-    callMessagesRef.current = []
-    setCallSummary(null)
-    callStartTimeRef.current = Date.now()
+  // ─── handleMic (chat mode) ─────────────────────────────
+  function handleMic() {
+    if (micActive) { setMicActive(false); return }
+    const SR = getSR()
+    if (!SR) { setKeyboardOpen(true); return }
+    setMicActive(true)
+    const r = new SR()
+    r.lang = 'en-US'; r.continuous = false; r.interimResults = false
+    r.onresult = (e) => { setMicActive(false); void sendMessage(e.results[0][0].transcript) }
+    r.onerror = () => { setMicActive(false); setError('Microphone error. Please type instead.') }
+    r.onend = () => setMicActive(false)
+    r.start()
+  }
 
-    const greeting = await getInitialGreeting(scenario)
-    const { clean } = parseCorrections(greeting)
-    const greetMsg: AIMessage = { role: 'assistant', content: clean, timestamp: new Date().toISOString() }
-    setCallMessages([greetMsg])
-    callMessagesRef.current = [greetMsg]
-    speakAndListen(clean)
+  // ─── Call mode ─────────────────────────────────────────
+  function listenForUser() {
+    const SR = getSR()
+    if (!SR) return
+    const r = new SR()
+    recognitionRef.current = r
+    r.lang = 'en-US'; r.continuous = false; r.interimResults = false
+    setMicActive(true)
+    r.onresult = (e) => {
+      setMicActive(false)
+      void handleCallMessage(e.results[0][0].transcript)
+    }
+    r.onerror = () => setMicActive(false)
+    r.onend   = () => setMicActive(false)
+    r.start()
   }
 
   function speakAndListen(text: string) {
@@ -236,65 +286,58 @@ export function ChatPage({ onStatsUpdate }: Props) {
     window.speechSynthesis.cancel()
     setIsSpeaking(true)
     const utter = new SpeechSynthesisUtterance(text)
-    utter.lang = 'en-US'
-    utter.rate = 0.95
+    utter.lang = 'en-US'; utter.rate = 0.95
     const voices = window.speechSynthesis.getVoices()
-    const preferred = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Natural'))) || voices.find(v => v.lang.startsWith('en'))
-    if (preferred) utter.voice = preferred
+    const pref = voices.find(v => v.lang.startsWith('en') && (v.name.includes('Google') || v.name.includes('Natural')))
+      || voices.find(v => v.lang.startsWith('en'))
+    if (pref) utter.voice = pref
     utter.onend = () => { setIsSpeaking(false); listenForUser() }
     window.speechSynthesis.speak(utter)
   }
 
-  function listenForUser() {
-    const SpeechRecognition =
-  window.SpeechRecognition || window.webkitSpeechRecognition
-    if (!SpeechRecognition) { setError('Speech recognition not supported in this browser.'); return }
-    const recognition = new SpeechRecognition()
-    recognitionRef.current = recognition
-    recognition.lang = 'en-US'
-    recognition.continuous = false
-    recognition.interimResults = false
-    setMicActive(true)
-    recognition.start()
-    recognition.onresult = async (event: any) => {
-      setMicActive(false)
-      await handleCallMessage(event.results[0][0].transcript)
-    }
-    recognition.onerror = () => setMicActive(false)
-    recognition.onend = () => setMicActive(false)
-  }
-
-  const handleCallMessage = useCallback(async (userText: string) => {
+  async function handleCallMessage(userText: string) {
     const userMsg: AIMessage = { role: 'user', content: userText, timestamp: new Date().toISOString() }
     const updated = [...callMessagesRef.current, userMsg]
-    setCallMessages(updated)
     callMessagesRef.current = updated
+    setCallMessages([...updated])
     setLoading(true)
     try {
       const history = updated.map(m => ({ role: m.role, content: m.content }))
-      const aiRaw = await sendMessageToAI(history, scenario)
+      const aiRaw = await sendMessageToAI(history, scenarioRef.current)
       const { clean, corrections } = parseCorrections(aiRaw)
       const score = scoreMessage(corrections)
       const userMsgScored = { ...userMsg, corrections, score }
       const aiMsg: AIMessage = { role: 'assistant', content: clean, timestamp: new Date().toISOString() }
-      const final = updated.map((m, i) => i === updated.length - 1 ? userMsgScored : m)
-      const withAi = [...final, aiMsg]
-      setCallMessages(withAi)
-      callMessagesRef.current = withAi
+      const withScore = updated.map((m, i) => i === updated.length - 1 ? userMsgScored : m)
+      const final = [...withScore, aiMsg]
+      callMessagesRef.current = final
+      setCallMessages([...final])
       speakAndListen(clean)
     } catch {
       setError('AI response failed.')
     } finally {
       setLoading(false)
     }
-  }, [scenario])
+  }
+
+  async function startCall() {
+    setCallActive(true)
+    setCallMessages([])
+    callMessagesRef.current = []
+    setCallSummary(null)
+    callStartTimeRef.current = Date.now()
+    const greeting = await getInitialGreeting(scenarioRef.current)
+    const { clean } = parseCorrections(greeting)
+    const greetMsg: AIMessage = { role: 'assistant', content: clean, timestamp: new Date().toISOString() }
+    callMessagesRef.current = [greetMsg]
+    setCallMessages([greetMsg])
+    speakAndListen(clean)
+  }
 
   async function endCall() {
     window.speechSynthesis?.cancel()
     recognitionRef.current?.stop()
-    setMicActive(false)
-    setIsSpeaking(false)
-    setCallActive(false)
+    setMicActive(false); setIsSpeaking(false); setCallActive(false)
 
     const durationMins = Math.max(1, Math.round((Date.now() - callStartTimeRef.current) / 60000))
     const msgs = callMessagesRef.current
@@ -307,16 +350,17 @@ export function ChatPage({ onStatsUpdate }: Props) {
       if (m.score !== undefined) { totalScore += m.score; scoredCount++ }
     })
 
-    const avgScore = scoredCount > 0 ? Math.round(totalScore / scoredCount) : 100
-    const xpEarned = userMsgs.length * 15 + Math.round(avgScore / 5)
+    const avgScore  = scoredCount > 0 ? Math.round(totalScore / scoredCount) : 100
+    const xpEarned  = userMsgs.length * 15 + Math.round(avgScore / 5)
 
     if (user) {
       const stats = await getUserStats(user.id)
       if (stats) {
+        const newXp = (stats.xp || 0) + xpEarned
         await updateUserStats(user.id, {
-          xp: (stats.xp || 0) + xpEarned,
-          level: Math.floor(((stats.xp || 0) + xpEarned) / 500) + 1,
-          speaking_minutes: (stats.speaking_minutes || 0) + durationMins,
+          xp: newXp,
+          level: Math.floor(newXp / 500) + 1,
+          speaking_hours: (stats.speaking_hours || 0) + durationMins / 60,
         })
         onStatsUpdate()
       }
@@ -325,25 +369,9 @@ export function ChatPage({ onStatsUpdate }: Props) {
     setCallSummary({ totalMessages: userMsgs.length, xpEarned, allCorrections, avgScore, durationMins })
   }
 
-  function handleMic() {
-    if (micActive) { setMicActive(false); return }
-    setMicActive(true)
-    const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition
-    if (SpeechRecognition) {
-      const recognition = new SpeechRecognition()
-      recognition.lang = 'en-US'; recognition.continuous = false; recognition.interimResults = false
-      recognition.onresult = (event: any) => { setMicActive(false); sendMessage(event.results[0][0].transcript) }
-      recognition.onerror = () => { setMicActive(false); setError('Microphone error. Please type instead.') }
-      recognition.onend = () => setMicActive(false)
-      recognition.start()
-    } else {
-      setTimeout(() => { setMicActive(false); setKeyboardOpen(true); setTimeout(() => inputRef.current?.focus(), 100) }, 1500)
-    }
-  }
-
   const currentScenario = SCENARIOS.find(s => s.id === scenario)
 
-  // ─── CALL SUMMARY ───
+  // ─── CALL SUMMARY SCREEN ───────────────────────────────
   if (callSummary) {
     return (
       <div className="min-h-[calc(100vh-68px)] flex items-center justify-center p-4 bg-brand-bg">
@@ -359,10 +387,10 @@ export function ChatPage({ onStatsUpdate }: Props) {
           <div className="p-6 space-y-5">
             <div className="grid grid-cols-4 gap-3">
               {[
-                { label: 'XP Earned',  value: `+${callSummary.xpEarned}`, color: 'text-brand-green' },
-                { label: 'Avg Score',  value: `${callSummary.avgScore}%`, color: 'text-brand-purple-light' },
-                { label: 'Responses', value: `${callSummary.totalMessages}`, color: 'text-white' },
-                { label: 'Duration',  value: `${callSummary.durationMins}m`, color: 'text-brand-gold' },
+                { label: 'XP Earned', value: `+${callSummary.xpEarned}`,        color: 'text-brand-green'        },
+                { label: 'Avg Score', value: `${callSummary.avgScore}%`,         color: 'text-brand-purple-light' },
+                { label: 'Responses', value: `${callSummary.totalMessages}`,     color: 'text-white'              },
+                { label: 'Duration',  value: `${callSummary.durationMins}m`,     color: 'text-brand-gold'         },
               ].map(({ label, value, color }) => (
                 <div key={label} className="bg-brand-secondary border border-brand-border rounded-xl p-3 text-center">
                   <div className={`text-xl font-bold ${color}`}>{value}</div>
@@ -380,7 +408,7 @@ export function ChatPage({ onStatsUpdate }: Props) {
                   {callSummary.allCorrections.map((c, i) => (
                     <div key={i} className="bg-brand-secondary border border-brand-border rounded-xl px-4 py-3">
                       {c.wrong ? (
-                        <div className="flex items-start gap-2 text-sm">
+                        <div className="flex items-start gap-2 text-sm flex-wrap">
                           <span className="text-red-400 line-through opacity-70">{c.wrong}</span>
                           <span className="text-slate-400">→</span>
                           <span className="text-brand-green font-medium">{c.right}</span>
@@ -403,7 +431,7 @@ export function ChatPage({ onStatsUpdate }: Props) {
                 className="flex-1 bg-brand-card2 border border-brand-border hover:border-brand-purple text-white rounded-xl py-3 text-sm font-semibold transition-all">
                 Back to Chat
               </button>
-              <button onClick={() => { setCallSummary(null); setCallMessages([]); startCall() }}
+              <button onClick={() => { setCallSummary(null); setCallMessages([]); void startCall() }}
                 className="flex-1 bg-brand-purple hover:bg-brand-purple-light text-white rounded-xl py-3 text-sm font-semibold flex items-center justify-center gap-2 transition-all">
                 <Phone className="w-4 h-4" /> New Call
               </button>
@@ -414,7 +442,7 @@ export function ChatPage({ onStatsUpdate }: Props) {
     )
   }
 
-  // ─── CALL ACTIVE ───
+  // ─── CALL ACTIVE SCREEN ────────────────────────────────
   if (callActive) {
     const lastAiMsg = [...callMessages].reverse().find(m => m.role === 'assistant')
     return (
@@ -430,9 +458,11 @@ export function ChatPage({ onStatsUpdate }: Props) {
 
           <div className="flex flex-col items-center mb-8">
             <div className={`w-28 h-28 rounded-full border-4 flex items-center justify-center mb-4 transition-all duration-300
-              ${isSpeaking ? 'border-brand-purple bg-brand-purple/20 shadow-[0_0_40px_rgba(124,58,237,0.4)] scale-110'
-              : micActive   ? 'border-brand-green bg-brand-green/10 shadow-[0_0_30px_rgba(29,158,117,0.3)]'
-              : 'border-brand-border bg-brand-card'}`}>
+              ${isSpeaking
+                ? 'border-brand-purple bg-brand-purple/20 shadow-[0_0_40px_rgba(124,58,237,0.4)] scale-110'
+                : micActive
+                  ? 'border-brand-green bg-brand-green/10 shadow-[0_0_30px_rgba(29,158,117,0.3)]'
+                  : 'border-brand-border bg-brand-card'}`}>
               <Bot className={`w-14 h-14 ${isSpeaking ? 'text-brand-purple-light' : 'text-slate-400'}`} />
             </div>
             <div className="text-white font-semibold mb-1">
@@ -441,10 +471,13 @@ export function ChatPage({ onStatsUpdate }: Props) {
             {(isSpeaking || micActive) && (
               <div className="flex items-center gap-1">
                 {[...Array(5)].map((_, i) => (
-                  <div key={i} className={`w-1 rounded-full animate-pulse ${isSpeaking ? 'bg-brand-purple-light' : 'bg-brand-green'}`}
+                  <div key={i}
+                    className={`w-1 rounded-full animate-pulse ${isSpeaking ? 'bg-brand-purple-light' : 'bg-brand-green'}`}
                     style={{ height: `${8 + (i % 3) * 8}px`, animationDelay: `${i * 0.1}s` }} />
                 ))}
-                {isSpeaking ? <Volume2 className="w-4 h-4 text-brand-purple-light ml-1" /> : <Mic className="w-4 h-4 text-brand-green ml-1" />}
+                {isSpeaking
+                  ? <Volume2 className="w-4 h-4 text-brand-purple-light ml-1" />
+                  : <Mic className="w-4 h-4 text-brand-green ml-1" />}
               </div>
             )}
           </div>
@@ -458,7 +491,7 @@ export function ChatPage({ onStatsUpdate }: Props) {
             {callMessages.filter(m => m.role === 'user').length} responses so far
           </div>
 
-          <button onClick={endCall}
+          <button onClick={() => void endCall()}
             className="w-full bg-red-500/10 hover:bg-red-500/20 border border-red-500/30 hover:border-red-500 text-red-400 rounded-2xl py-4 text-sm font-bold flex items-center justify-center gap-3 transition-all">
             <PhoneOff className="w-5 h-5" /> End Call & See Results
           </button>
@@ -467,7 +500,7 @@ export function ChatPage({ onStatsUpdate }: Props) {
     )
   }
 
-  // ─── NORMAL CHAT ───
+  // ─── NORMAL CHAT ───────────────────────────────────────
   return (
     <div className="grid grid-cols-1 md:grid-cols-[260px_1fr] h-[calc(100vh-68px-70px)] md:h-[calc(100vh-68px)]">
 
@@ -479,7 +512,7 @@ export function ChatPage({ onStatsUpdate }: Props) {
         </div>
         <div className="flex-1 overflow-y-auto p-3 space-y-1">
           {SCENARIOS.map(({ id, label, Icon }) => (
-            <button key={id} onClick={() => handleSelectScenario(id)}
+            <button key={id} onClick={() => void handleSelectScenario(id)}
               className={`w-full flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-all
                 ${scenario === id ? 'bg-brand-purple text-white' : 'text-slate-400 hover:bg-white/5 hover:text-white'}`}>
               <Icon className="w-4 h-4" /> {label}
@@ -487,11 +520,11 @@ export function ChatPage({ onStatsUpdate }: Props) {
           ))}
         </div>
         <div className="px-3 space-y-2">
-          <button onClick={startCall}
+          <button onClick={() => void startCall()}
             className="w-full bg-brand-green/10 border border-brand-green/30 hover:border-brand-green hover:bg-brand-green/20 text-brand-green rounded-xl p-3 text-sm font-semibold flex items-center justify-center gap-2 transition-all">
             <Phone className="w-4 h-4" /> Start Voice Call
           </button>
-          <button onClick={() => startNewSession(scenario)}
+          <button onClick={() => void startNewSession(scenario)}
             className="w-full bg-brand-card border border-brand-border hover:border-brand-purple text-white rounded-xl p-3 text-sm font-semibold flex items-center justify-center gap-2 transition-all">
             <span className="text-lg leading-none">+</span> New Session
           </button>
@@ -508,7 +541,7 @@ export function ChatPage({ onStatsUpdate }: Props) {
             {scenario}
           </div>
           <div className="flex items-center gap-2">
-            <button onClick={startCall}
+            <button onClick={() => void startCall()}
               className="flex items-center gap-1.5 text-xs bg-brand-green/10 border border-brand-green/30 px-3 py-1.5 rounded-md text-brand-green hover:bg-brand-green/20 transition-all">
               <Phone className="w-3 h-3" /> Call
             </button>
@@ -538,11 +571,15 @@ export function ChatPage({ onStatsUpdate }: Props) {
               className={`flex items-start gap-2 md:gap-3 max-w-[90%] md:max-w-[680px] ${msg.role === 'user' ? 'ml-auto flex-row-reverse' : ''}`}>
               <div className={`w-8 h-8 md:w-9 md:h-9 rounded-full flex-shrink-0 flex items-center justify-center
                 ${msg.role === 'assistant' ? 'bg-brand-purple/10 border border-brand-purple/30' : 'bg-brand-card2 border border-brand-border'}`}>
-                {msg.role === 'assistant' ? <Bot className="w-4 h-4 md:w-5 md:h-5 text-brand-purple-light" /> : <User className="w-4 h-4 md:w-5 md:h-5 text-slate-300" />}
+                {msg.role === 'assistant'
+                  ? <Bot  className="w-4 h-4 md:w-5 md:h-5 text-brand-purple-light" />
+                  : <User className="w-4 h-4 md:w-5 md:h-5 text-slate-300" />}
               </div>
               <div className="flex flex-col gap-1.5">
                 <div className={`px-4 py-3 md:px-5 md:py-3.5 rounded-2xl text-[14px] md:text-[15px] leading-relaxed
-                  ${msg.role === 'assistant' ? 'bg-brand-card border border-brand-border rounded-tl-sm' : 'bg-brand-card2 border border-brand-border rounded-tr-sm'}`}>
+                  ${msg.role === 'assistant'
+                    ? 'bg-brand-card border border-brand-border rounded-tl-sm'
+                    : 'bg-brand-card2 border border-brand-border rounded-tr-sm'}`}>
                   {msg.content}
                 </div>
 
@@ -598,7 +635,7 @@ export function ChatPage({ onStatsUpdate }: Props) {
                 className={`w-14 h-14 md:w-16 md:h-16 rounded-full bg-brand-purple border-none cursor-pointer flex items-center justify-center text-white shadow-[0_0_0_8px_rgba(124,58,237,0.12)] transition-all mic-btn ${micActive ? 'recording' : ''}`}>
                 {micActive ? <Square className="w-6 h-6 md:w-7 md:h-7" /> : <Mic className="w-6 h-6 md:w-7 md:h-7" />}
               </button>
-              <button onClick={() => { setMessages([]); startNewSession(scenario) }}
+              <button onClick={() => { setMessages([]); void startNewSession(scenario) }}
                 className="w-10 h-10 md:w-11 md:h-11 rounded-full bg-red-500/10 border border-red-500/30 flex items-center justify-center text-red-400 hover:bg-red-500/20 transition-all">
                 <PhoneOff className="w-4 h-4 md:w-5 md:h-5" />
               </button>
@@ -611,11 +648,11 @@ export function ChatPage({ onStatsUpdate }: Props) {
               </button>
               <input ref={inputRef} type="text" value={inputText}
                 onChange={e => setInputText(e.target.value)}
-                onKeyDown={e => { if (e.key === 'Enter') sendMessage(inputText) }}
+                onKeyDown={e => { if (e.key === 'Enter') void sendMessage(inputText) }}
                 placeholder="Type your message in English..."
                 className="flex-1 bg-brand-card border border-brand-border rounded-xl px-3 py-2 md:px-4 md:py-3 text-brand-text text-[14px] md:text-[15px] outline-none focus:border-brand-purple placeholder-slate-500"
                 autoFocus />
-              <button onClick={() => sendMessage(inputText)} disabled={loading || !inputText.trim()}
+              <button onClick={() => void sendMessage(inputText)} disabled={loading || !inputText.trim()}
                 className="w-10 h-10 md:w-11 md:h-11 rounded-xl bg-brand-purple text-white flex items-center justify-center hover:bg-brand-purple-light disabled:opacity-50 disabled:cursor-not-allowed flex-shrink-0">
                 <Send className="w-4 h-4 md:w-5 md:h-5" />
               </button>
@@ -638,7 +675,7 @@ export function ChatPage({ onStatsUpdate }: Props) {
             </div>
             <div className="space-y-2">
               {SCENARIOS.map(({ id, label, Icon }) => (
-                <button key={id} onClick={() => handleSelectScenario(id)}
+                <button key={id} onClick={() => void handleSelectScenario(id)}
                   className={`w-full flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all
                     ${scenario === id ? 'bg-brand-purple text-white' : 'bg-brand-card2 border border-brand-border text-slate-300 hover:border-brand-purple hover:text-white'}`}>
                   <Icon className="w-4 h-4" /> {label}
