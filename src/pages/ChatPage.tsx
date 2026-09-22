@@ -2,7 +2,7 @@ import { useState, useRef, useEffect, useCallback } from 'react'
 import {
   Mic, Square, Keyboard, PhoneOff, Send,
   Bot, User, Briefcase, Coffee, Stethoscope,
-  Plane, Users, AlertCircle, Loader2, ChevronDown, X,
+  Plane, Users, Loader2, ChevronDown, X,
   Phone, Star, TrendingUp, Award, Volume2,
 } from 'lucide-react'
 import { useAuth } from '../lib/authContext'
@@ -123,7 +123,7 @@ export function ChatPage({ onStatsUpdate }: Props) {
   const [micActive, setMicActive]                 = useState(false)
   const [inputText, setInputText]                 = useState('')
   const [sessionId, setSessionId]                 = useState<string | null>(null)
-  const [error, setError]                         = useState<string | null>(null)
+  const [, setError]                               = useState<string | null>(null)
   const [initializing, setInitializing]           = useState(false)
   const [scenarioModalOpen, setScenarioModalOpen] = useState(false)
 
@@ -596,12 +596,6 @@ export function ChatPage({ onStatsUpdate }: Props) {
               Starting {scenario} session...
             </div>
           )}
-          {error && (
-            <div className="flex items-center gap-3 bg-red-500/10 border border-red-500/20 rounded-xl px-4 py-3 text-red-400 text-sm">
-              <AlertCircle className="w-4 h-4 flex-shrink-0" /> {error}
-            </div>
-          )}
-
           {messages.map((msg, i) => (
             <div key={i}
               className={`flex items-start gap-2 md:gap-3 max-w-[90%] md:max-w-[680px] ${msg.role === 'user' ? 'ml-auto flex-row-reverse' : ''}`}>
