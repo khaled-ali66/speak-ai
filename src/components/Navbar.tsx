@@ -1,7 +1,7 @@
-import { Brain, Bell, Zap, Home, MessageSquare, Trophy, User, LogIn, LogOut } from 'lucide-react'
+import { Brain, Bell, Zap, Home, MessageSquare, Trophy, User, LogIn, LogOut, Puzzle } from 'lucide-react'
 import { useAuth } from '../lib/authContext'
 
-type Page = 'home' | 'chat' | 'leaderboard' | 'profile'
+type Page = 'home' | 'chat' | 'leaderboard' | 'profile' | 'quiz'
 
 interface NavbarProps {
   currentPage: Page
@@ -13,6 +13,7 @@ interface NavbarProps {
 const desktopLinks: { id: Page; label: string }[] = [
   { id: 'home', label: 'Dashboard' },
   { id: 'chat', label: 'AI Chat' },
+  { id: 'quiz', label: 'Quiz' },
   { id: 'leaderboard', label: 'Leaderboard' },
   { id: 'profile', label: 'Profile' },
 ]
@@ -20,6 +21,7 @@ const desktopLinks: { id: Page; label: string }[] = [
 const mobileLinks: { id: Page; label: string; Icon: React.ElementType }[] = [
   { id: 'home', label: 'Home', Icon: Home },
   { id: 'chat', label: 'Chat', Icon: MessageSquare },
+  { id: 'quiz', label: 'Quiz', Icon: Puzzle },
   { id: 'leaderboard', label: 'Rank', Icon: Trophy },
   { id: 'profile', label: 'Profile', Icon: User },
 ]
@@ -102,6 +104,9 @@ export function Navbar({ currentPage, onNavigate, xp, onLoginClick }: NavbarProp
           </button>
         )}
       </div>
+    </>
+  )
+}
     </>
   )
 }
