@@ -107,6 +107,3 @@ export function Navbar({ currentPage, onNavigate, xp, onLoginClick }: NavbarProp
     </>
   )
 }
-    </>
-  )
-}
