@@ -175,7 +175,7 @@ export function ChatPage({ onStatsUpdate }: Props) {
           if (stats) updateUserStats(user.id, {
             speaking_hours: (stats.speaking_hours || 0) + mins / 60,
           })
-        })
+        }).catch(err => console.error('speaking_hours update failed:', err))
       }
     }
   }, [user])
@@ -192,16 +192,24 @@ export function ChatPage({ onStatsUpdate }: Props) {
       const initialMsg: AIMessage = { role: 'assistant', content: clean, timestamp: new Date().toISOString(), corrections }
       setMessages([initialMsg])
       if (user) {
-        const dbMessages: ChatMessage[] = [{ role: 'assistant', content: clean, timestamp: initialMsg.timestamp }]
-        const session = await saveSession({ user_id: user.id, scenario: sc, messages: dbMessages })
-        if (session) setSessionId(session.id)
-        const stats = await getUserStats(user.id)
-        if (stats) {
-          await updateUserStats(user.id, { sessions_count: (stats.sessions_count || 0) + 1 })
-          onStatsUpdate()
+        // DB/stats side-effects run in their own try/catch: if Supabase
+        // fails here, the chat has already loaded successfully and
+        // shouldn't show a misleading "check your API key" error.
+        try {
+          const dbMessages: ChatMessage[] = [{ role: 'assistant', content: clean, timestamp: initialMsg.timestamp }]
+          const session = await saveSession({ user_id: user.id, scenario: sc, messages: dbMessages })
+          if (session) setSessionId(session.id)
+          const stats = await getUserStats(user.id)
+          if (stats) {
+            await updateUserStats(user.id, { sessions_count: (stats.sessions_count || 0) + 1 })
+            onStatsUpdate()
+          }
+        } catch (dbError) {
+          console.error('startNewSession DB sync failed:', dbError)
         }
       }
-    } catch {
+    } catch (aiError) {
+      console.error('getInitialGreeting failed:', aiError)
       setError('Could not connect to AI. Check your API key in .env')
     } finally {
       setInitializing(false)
@@ -244,22 +252,29 @@ export function ChatPage({ onStatsUpdate }: Props) {
       const withAi = [...finalMsgs, aiMsg]
       setMessages(withAi)
 
-      const sid = sessionIdRef.current
-      if (sid) {
-        const dbMsgs: ChatMessage[] = withAi.map(m => ({ role: m.role, content: m.content, timestamp: m.timestamp }))
-        await updateSession(sid, dbMsgs)
-      }
-
-      if (user) {
-        const stats = await getUserStats(user.id)
-        if (stats) {
-          const xpGain = Math.round(score / 10)
-          const newXp = (stats.xp || 0) + xpGain
-          await updateUserStats(user.id, { xp: newXp, level: Math.floor(newXp / 500) + 1 })
-          onStatsUpdate()
+      // DB/stats side-effects: isolated so a Supabase failure here doesn't
+      // hide a perfectly good AI reply behind an "AI response failed" error.
+      try {
+        const sid = sessionIdRef.current
+        if (sid) {
+          const dbMsgs: ChatMessage[] = withAi.map(m => ({ role: m.role, content: m.content, timestamp: m.timestamp }))
+          await updateSession(sid, dbMsgs)
         }
+
+        if (user) {
+          const stats = await getUserStats(user.id)
+          if (stats) {
+            const xpGain = Math.round(score / 10)
+            const newXp = (stats.xp || 0) + xpGain
+            await updateUserStats(user.id, { xp: newXp, level: Math.floor(newXp / 500) + 1 })
+            onStatsUpdate()
+          }
+        }
+      } catch (dbError) {
+        console.error('sendMessage DB sync failed:', dbError)
       }
-    } catch {
+    } catch (aiError) {
+      console.error('sendMessageToAI failed:', aiError)
       setError('AI response failed. Please try again.')
     } finally {
       setLoading(false)
@@ -329,7 +344,8 @@ export function ChatPage({ onStatsUpdate }: Props) {
       callMessagesRef.current = final
       setCallMessages([...final])
       speakAndListen(clean)
-    } catch {
+    } catch (aiError) {
+      console.error('handleCallMessage failed:', aiError)
       setError('AI response failed.')
     } finally {
       setLoading(false)
@@ -370,15 +386,19 @@ export function ChatPage({ onStatsUpdate }: Props) {
     const xpEarned  = userMsgs.length * 15 + Math.round(avgScore / 5)
 
     if (user) {
-      const stats = await getUserStats(user.id)
-      if (stats) {
-        const newXp = (stats.xp || 0) + xpEarned
-        await updateUserStats(user.id, {
-          xp: newXp,
-          level: Math.floor(newXp / 500) + 1,
-          speaking_hours: (stats.speaking_hours || 0) + durationMins / 60,
-        })
-        onStatsUpdate()
+      try {
+        const stats = await getUserStats(user.id)
+        if (stats) {
+          const newXp = (stats.xp || 0) + xpEarned
+          await updateUserStats(user.id, {
+            xp: newXp,
+            level: Math.floor(newXp / 500) + 1,
+            speaking_hours: (stats.speaking_hours || 0) + durationMins / 60,
+          })
+          onStatsUpdate()
+        }
+      } catch (dbError) {
+        console.error('endCall stats update failed:', dbError)
       }
     }
 
