@@ -6,12 +6,13 @@ import { HomePage } from './pages/HomePage'
 import { ChatPage } from './pages/ChatPage'
 import { LeaderboardPage } from './pages/LeaderboardPage'
 import { ProfilePage } from './pages/ProfilePage'
+import { QuizPage } from './pages/QuizPage'
 import { LoginModal } from './components/LoginModal'
-import { getUserStats, updateUserStats, upsertUserStats, type UserStats } from './lib/supabase'
+import { getUserStats, updateUserStats, type UserStats } from './lib/supabase'
 import { useToast } from './hooks/useToast'
 
-type Page = 'home' | 'chat' | 'leaderboard' | 'profile'
-const PROTECTED: Page[] = ['chat', 'leaderboard', 'profile']
+type Page = 'home' | 'chat' | 'leaderboard' | 'profile' | 'quiz'
+const PROTECTED: Page[] = ['chat', 'leaderboard', 'profile', 'quiz']
 
 function App() {
   const { user, isLoaded } = useAuth()
@@ -23,19 +24,11 @@ function App() {
 
   useEffect(() => {
     if (user) {
-      const displayName = user.firstName || user.email.split('@')[0] || 'User'
-      // Sync display name and create stats row if missing
-      upsertUserStats(user.id, displayName).then(() => {
-        getUserStats(user.id).then(s => { if (s) setStats(s) })
-      })
+      getUserStats(user.id).then(s => { if (s) setStats(s) })
     } else {
       setStats(null)
     }
   }, [user])
-
-  function refreshStats() {
-    if (user) getUserStats(user.id).then(s => { if (s) setStats(s) })
-  }
 
   function navigate(page: Page) {
     if (PROTECTED.includes(page) && !user) {
@@ -88,9 +81,12 @@ function App() {
         {currentPage === 'home' && (
           <HomePage onNavigate={navigate} stats={stats} onClaimQuest={claimQuest} />
         )}
-        {currentPage === 'chat' && user && <ChatPage onStatsUpdate={refreshStats} />}
+        {currentPage === 'chat' && user && <ChatPage />}
         {currentPage === 'leaderboard' && user && <LeaderboardPage />}
         {currentPage === 'profile' && user && <ProfilePage stats={stats} />}
+        {currentPage === 'quiz' && user && (
+          <QuizPage stats={stats} onStatsUpdate={setStats} />
+        )}
       </main>
 
       <Toast msg={toast.msg} visible={toast.visible} />
@@ -100,6 +96,11 @@ function App() {
         onClose={() => { setLoginOpen(false); setPendingPage(null) }}
         onSuccess={handleLoginSuccess}
       />
+    </>
+  )
+}
+
+export default App
     </>
   )
 }
