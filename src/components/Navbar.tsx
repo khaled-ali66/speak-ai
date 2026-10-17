@@ -1,7 +1,7 @@
-import { Brain, Bell, Zap, Home, MessageSquare, Trophy, User, LogIn, LogOut, Puzzle } from 'lucide-react'
+import { Brain, Bell, Zap, Home, MessageSquare, Trophy, User, LogIn, LogOut, Puzzle, BookOpen, GraduationCap } from 'lucide-react'
 import { useAuth } from '../lib/authContext'
 
-type Page = 'home' | 'chat' | 'leaderboard' | 'profile' | 'quiz'
+type Page = 'home' | 'chat' | 'leaderboard' | 'profile' | 'quiz' | 'curriculum' | 'step'
 
 interface NavbarProps {
   currentPage: Page
@@ -14,6 +14,8 @@ const desktopLinks: { id: Page; label: string }[] = [
   { id: 'home', label: 'Dashboard' },
   { id: 'chat', label: 'AI Chat' },
   { id: 'quiz', label: 'Quiz' },
+  { id: 'curriculum', label: 'Curriculum' },
+  { id: 'step', label: 'STEP' },
   { id: 'leaderboard', label: 'Leaderboard' },
   { id: 'profile', label: 'Profile' },
 ]
@@ -22,6 +24,8 @@ const mobileLinks: { id: Page; label: string; Icon: React.ElementType }[] = [
   { id: 'home', label: 'Home', Icon: Home },
   { id: 'chat', label: 'Chat', Icon: MessageSquare },
   { id: 'quiz', label: 'Quiz', Icon: Puzzle },
+  { id: 'curriculum', label: 'Study', Icon: BookOpen },
+  { id: 'step', label: 'STEP', Icon: GraduationCap },
   { id: 'leaderboard', label: 'Rank', Icon: Trophy },
   { id: 'profile', label: 'Profile', Icon: User },
 ]
@@ -36,7 +40,7 @@ export function Navbar({ currentPage, onNavigate, xp, onLoginClick }: NavbarProp
           <div className="w-8 h-8 md:w-10 md:h-10 bg-gradient-to-tr from-brand-purple to-purple-500 rounded-xl flex items-center justify-center">
             <Brain className="text-white w-4 h-4 md:w-5 md:h-5" />
           </div>
-          <div className="font-display text-[15px] md:text-[17px] font-bold text-white leading-none">SpeakSmart AI</div>
+          <div className="font-display text-[15px] md:text-[17px] font-bold text-white leading-none">SpeakSmart</div>
         </button>
 
         <div className="hidden md:flex flex-1 justify-center gap-8">

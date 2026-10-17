@@ -7,12 +7,14 @@ import { ChatPage } from './pages/ChatPage'
 import { LeaderboardPage } from './pages/LeaderboardPage'
 import { ProfilePage } from './pages/ProfilePage'
 import { QuizPage } from './pages/QuizPage'
+import { CurriculumPage } from './pages/CurriculumPage'
+import { StepPage } from './pages/StepPage'
 import { LoginModal } from './components/LoginModal'
 import { getUserStats, updateUserStats, type UserStats } from './lib/supabase'
 import { useToast } from './hooks/useToast'
 
-type Page = 'home' | 'chat' | 'leaderboard' | 'profile' | 'quiz'
-const PROTECTED: Page[] = ['chat', 'leaderboard', 'profile', 'quiz']
+type Page = 'home' | 'chat' | 'leaderboard' | 'profile' | 'quiz' | 'curriculum' | 'step'
+const PROTECTED: Page[] = ['chat', 'leaderboard', 'profile', 'quiz', 'curriculum', 'step']
 
 function App() {
   const { user, isLoaded } = useAuth()
@@ -82,6 +84,8 @@ function App() {
           <HomePage onNavigate={navigate} stats={stats} onClaimQuest={claimQuest} />
         )}
         {currentPage === 'chat' && user && <ChatPage />}
+        {currentPage === 'curriculum' && user && <CurriculumPage />}
+        {currentPage === 'step' && user && <StepPage stats={stats} onStatsUpdate={setStats} />}
         {currentPage === 'leaderboard' && user && <LeaderboardPage />}
         {currentPage === 'profile' && user && <ProfilePage stats={stats} />}
         {currentPage === 'quiz' && user && (
