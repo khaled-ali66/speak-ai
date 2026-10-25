@@ -17,13 +17,38 @@ const SECTION_META: Record<StepSection, { title: string; desc: string; Icon: Rea
   listening: { title: 'Listening', desc: 'Listen (max 2 plays), then answer', Icon: Headphones, color: '#f97316' },
 }
 
+// The bank holds 200 questions per section, so each test is a random sample of it.
+const TEST_SIZE: Record<StepSection, number> = { grammar: 30, reading: 24, listening: 24 }
+
+function shuffle<T>(arr: T[]): T[] {
+  const a = [...arr]
+  for (let i = a.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1))
+    ;[a[i], a[j]] = [a[j], a[i]]
+  }
+  return a
+}
+
+function sampleSection(s: StepSection): StepQuestion[] {
+  const qs = STEP_BANK.filter(q => q.section === s)
+  if (s === 'grammar') return shuffle(qs).slice(0, TEST_SIZE.grammar)
+  // reading / listening: pick whole passages (questions stay together and in order)
+  const groups = new Map<string, StepQuestion[]>()
+  for (const q of qs) {
+    const k = q.passageId ?? q.id
+    groups.set(k, [...(groups.get(k) ?? []), q])
+  }
+  const picked: StepQuestion[] = []
+  for (const g of shuffle([...groups.values()])) {
+    if (picked.length >= TEST_SIZE[s]) break
+    picked.push(...g)
+  }
+  return picked
+}
+
 function buildTest(mode: Mode): StepQuestion[] {
   const sections = mode === 'mock' ? ORDER : [mode]
-  // keep passage questions together & in order; shuffle only the grammar questions
-  return sections.flatMap(s => {
-    const qs = STEP_BANK.filter(q => q.section === s)
-    return s === 'grammar' ? [...qs].sort(() => Math.random() - 0.5) : qs
-  })
+  return sections.flatMap(sampleSection)
 }
 
 const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`
@@ -126,14 +151,14 @@ export function StepPage({ stats, onStatsUpdate }: Props) {
                 </div>
                 <div className="font-bold text-white">{title}</div>
                 <div className="text-sm text-slate-400 mb-3">{desc}</div>
-                <div className="text-xs text-slate-500">{counts[s]} questions · {fmt(counts[s] * SECONDS_PER_Q[s])}</div>
+                <div className="text-xs text-slate-500">{counts[s]} in bank · {TEST_SIZE[s]}-question test · {fmt(TEST_SIZE[s] * SECONDS_PER_Q[s])}</div>
               </button>
             )
           })}
         </div>
         <button onClick={() => start('mock')}
           className="w-full flex items-center justify-center gap-3 bg-brand-purple hover:bg-brand-purple-light text-white font-bold rounded-2xl py-4 transition-colors">
-          <Layers className="w-5 h-5" /> Full Mock Test ({STEP_BANK.length} questions)
+          <Layers className="w-5 h-5" /> Full Mock Test ({ORDER.reduce((a, k) => a + TEST_SIZE[k], 0)} random questions from {STEP_BANK.length})
         </button>
       </div>
     )
