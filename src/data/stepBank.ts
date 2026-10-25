@@ -5,6 +5,10 @@
 //    (or set `audioUrl` on the passage to use a real mp3 placed in /public/step-audio/)
 // correctIndex is 0-based (0 = A, 1 = B, ...).
 
+import { GRAMMAR_QUESTIONS } from './stepBank.grammar'
+import { READING_PASSAGES, READING_QUESTIONS } from './stepBank.reading'
+import { LISTENING_PASSAGES, LISTENING_QUESTIONS } from './stepBank.listening'
+
 export type StepSection = 'grammar' | 'reading' | 'listening'
 
 export interface StepPassage {
@@ -25,7 +29,7 @@ export interface StepQuestion {
   passageId?: string
 }
 
-export const PASSAGES: StepPassage[] = [
+const SEED_PASSAGES: StepPassage[] = [
   {
     id: 'r1', section: 'reading', title: 'The Rise of Remote Work',
     text: `Over the past decade, remote work has changed from a rare privilege into a common way of working. Before 2020, only a small number of companies allowed employees to work from home regularly. When offices closed during the pandemic, many organisations discovered that a large part of their work could be done just as well from a kitchen table as from a desk in the city centre.
@@ -61,7 +65,7 @@ Woman: Okay, I'll check that option tonight and book it tomorrow morning if the 
   },
 ]
 
-export const STEP_BANK: StepQuestion[] = [
+const SEED_QUESTIONS: StepQuestion[] = [
   // ───────── GRAMMAR ─────────
   { id: 'g1', section: 'grammar', question: 'She ______ to the gym every morning before work.', options: ['go', 'goes', 'going', 'is go'], correctIndex: 1, explanation: 'Habit in the present simple: third person singular (she) takes -es → goes.' },
   { id: 'g2', section: 'grammar', question: 'If I ______ more time, I would learn another language.', options: ['have', 'had', 'will have', 'would have'], correctIndex: 1, explanation: 'Second conditional (unreal present): if + past simple, would + base verb.' },
@@ -110,3 +114,13 @@ export const STEP_BANK: StepQuestion[] = [
   { id: 'lq9', section: 'listening', passageId: 'l3', question: 'When is the written assignment due?', options: ['Today', 'Next week', 'Thursday', 'After the unit ends'], correctIndex: 2, explanation: 'The assignment is due on Thursday.' },
 ]
 
+// Full bank: 200 questions per section (24+176 grammar, 8+192 reading, 9+191 listening).
+// The generated parts come from scripts/step-src/*.txt via `node scripts/build-step-bank.mjs`.
+export const PASSAGES: StepPassage[] = [...SEED_PASSAGES, ...READING_PASSAGES, ...LISTENING_PASSAGES]
+
+export const STEP_BANK: StepQuestion[] = [
+  ...SEED_QUESTIONS,
+  ...GRAMMAR_QUESTIONS,
+  ...READING_QUESTIONS,
+  ...LISTENING_QUESTIONS,
+]
